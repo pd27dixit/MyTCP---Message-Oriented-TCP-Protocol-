@@ -1,0 +1,164 @@
+﻿ROLL NO OF GROUP MEMBERS:
+20CS10004(Abothula Suneetha)
+20CS10047(Priyanshi Dixit)
+
+
+DATA STRUCTURES USED::
+
+
+1. message_t :  each message (max length MAX_MESSAGE_LENGTH)has a message inside it along with its length and the socket descriptor associated with it to know where to send it 
+2. message_table_t: each table has MAX_TABLE_ENTRIES number of messages with a  lock and conditional variable send_cv along with usual counters(head,tail,count).
+send_cv is mainly for waiting if there is no entry in table and signalled when the tail is updated. lock is used while making an entry to synchronise writing to a table.
+
+
+2 tables are globally maintained namely message_table_t send_table;  message_table_t receive_table
+2 threads send_tid and receive_tid for creating R_thread and S_thread .
+
+
+
+
+FUNCTIONS:
+void* S_thread(void* arg) : The function takes a void pointer argument, which is expected to contain the socket file descriptor for the connection. It begins by printing a message to indicate that it has started, and then retrieves the socket file descriptor from the argument.
+It then enters an infinite loop, where it first checks whether there are any messages to send in the send_table. If there is a message, it locks the send_table mutex, waits for the message to have a non-zero length using the send_cv condition variable, and then retrieves the message from the send_table. It then sends the message using one or more send calls, and updates the send_table to indicate that the message has been sent.
+If there is no message to send, the thread sleeps for somethime before checking again.
+The function returns NULL at the end, indicating that the thread has completed its task.
+
+
+
+
+void* R_thread(void* arg):It extracts an integer value from the arg pointer and assigns it to a variable sock1.
+The function enters into an infinite loop where it receives data from a TCP socket using the recv() function. If the newfd global variable is zero, then it uses the sock1 value for receiving data, otherwise it uses the newfd value.
+The function then interprets the received data as a message and adds it to a message table named receive_table. If the table is full, the message is dropped. If the table has enough space, the message is added to the table and the table head is moved to the next position. The receive_table table is protected by a mutex and a condition variable.
+The function then continues to receive data and add messages to the table indefinitely. If the recv() function returns an error or no data is received, the function prints a message and sleeps.
+
+
+
+
+void my_send(int sockfd, const void *buf, size_t len):
+my_send takes three arguments: a socket file descriptor sockfd, a buffer buf containing the data to be sent, and the length of the buffer len. The function uses a mutex lock to prevent multiple threads from accessing a shared data structure called send_table. It then waits for an available entry in send_table before copying the data from buf into the send_table structure. Finally, the function signals any waiting threads that data is available and releases the mutex lock.
+
+
+void my_recv(int sockfd, const void *buf, size_t len)
+my_recv also takes a socket file descriptor sockfd and a buffer buf as arguments, along with the length of the buffer len. The function searches a shared data structure called receive_table for a message that matches the provided sockfd. If no message is found, the function waits until a message is available by using a conditional wait. Once a matching message is found, the function copies the message from receive_table into buf, resets the message in receive_table, and signals any waiting threads that a message has been received. The function then releases the mutex lock.
+
+
+Both functions utilize mutex locks and conditional variables to manage access to shared data structures and coordinate between threads. The my_send function sends data to a destination, while my_recv waits to receive data from a particular source.
+
+
+
+
+int my_socket(int domain, int type, int protocol):
+The my_socket function creates a TCP socket using the socket function and initializes message tables for sending and receiving messages. It then creates two threads, one for sending messages and one for receiving messages, using the pthread_create function. Finally, it returns the file descriptor for the newly created socket. If the socket type is not SOCK_MyTCP, the function exits with an error code.
+
+All other functions like myconnect, my_accept,my_listen,my_close and just wrappers around the original functions with some difference in my_close().
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+PART2:
+
+
+The my_send() function is designed to send messages over a TCP socket, and it is designed to be called by multiple threads concurrently. When my_send() is called, it first adds the message to the Send_Message table. However, since multiple threads may be calling my_send() concurrently, there is a possibility of race conditions, where two threads may try to add a message to the Send_Message table at the same time. To prevent this, a mutex lock is used to synchronize access to the Send_Message table.
+
+
+After the message is added to the Send_Message table, it signals the S_thread to start sending the message. The S_thread periodically checks the Send_Message table for any pending messages and sends them over the TCP socket. If there is a message to send, the S_thread acquires a mutex lock to synchronize access to the Send_Message table and sends the message using one or more send() calls.
+
+
+However, since multiple threads may be calling my_send() concurrently, there is a possibility of the Send_Message table becoming full if messages are added too quickly. To prevent this, the my_send() function uses a conditional variable to signal the S_thread when a new message is added to the Send_Message table, so it can start sending the message. Additionally, the my_send() function waits for the S_thread to signal that the message has been sent before returning, to prevent messages from being overwritten before they are sent.
+
+
+On the receiving end, the R_thread listens on a TCP socket for incoming messages. When a message is received, it is added to the Received_Message table. However, since multiple threads may be receiving messages concurrently, there is a possibility of race conditions, where two threads may try to add a message to the Received_Message table at the same time. To prevent this, a mutex lock is used to synchronize access to the Received_Message table.
+
+
+Once a message is added to the Received_Message table, it signals any waiting threads that there is a new message available. Threads that are waiting to receive messages will acquire the mutex lock, check if there is a message available, and then remove the message from the Received_Message table.
+
+
+In summary, the use of mutex locks, conditional variables, and separate threads ensures that messages can be sent and received safely and efficiently, even when multiple threads are involved.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The my_recv function is designed to receive a message from a socket connection. It uses a shared data structure called receive_table to store incoming messages until they can be processed. The function also uses thread synchronization mechanisms, such as a mutex and a conditional variable, to avoid data races and ensure that the threads are properly synchronized.
+
+
+At the beginning of the function, it prints a debugging message to indicate that it has been called. Then it declares a variable called found and initializes it to 0. This variable is used later to determine whether a message has been found in the receive_table data structure.
+
+
+Next, the function acquires a lock on the receive_table data structure using a mutex. This is done to ensure that only one thread at a time can access the data structure to prevent data races. If another thread has already acquired the lock, then the current thread will be blocked until the lock is released.
+
+
+After acquiring the lock, the function iterates over the receive_table data structure to find a message that matches the sockfd parameter passed to the function. If a matching message is found, the function sets the found variable to 1, copies the message into the buffer buf, clears the message from the receive_table data structure, and signals the send_cv conditional variable. This signal notifies any waiting threads that there is now space available in the receive_table data structure, and that they can resume processing.
+
+
+If no matching message is found, the function prints a debugging message indicating that it is waiting for a message to arrive. Then, it waits on the send_cv conditional variable using pthread_cond_wait. This function call releases the mutex lock and blocks the current thread until it receives a signal on the send_cv conditional variable. Once the signal is received, the function re-acquires the mutex lock and resumes searching the receive_table data structure for a matching message.
+
+
+After completing the loop, the function releases the lock on the receive_table data structure using pthread_mutex_unlock and prints a debugging message indicating that it has finished processing. Finally, the function returns 0 to indicate success.
+
+
+In summary, the my_recv function uses a shared data structure and thread synchronization mechanisms to avoid data races and ensure proper thread synchronization. It iterates over the receive_table data structure to find a message that matches the sockfd parameter, and waits on the send_cv conditional variable if no matching message is found. Once a message is found, the function signals the send_cv conditional variable and returns the message to the caller.
+
+
+
+
+
+
+
+
+
+
+QUESTION IN ASSIGNMENT:
+
+
+So how do you ensure that a message is received as a whole on the other side? You will
+open a standard TCP connection to actually communicate. This ensures the reliability,
+exactly once, and in-order delivery you want. However, this does not guarantee that
+whatever is sent using a my_send call on the MyTCP socket is sent and received in a
+single send/recv call on the underlying TCP socket. So you need to somehow remember
+and send message boundaries and reconstruct the message on the receiving side even if it is not received in one go. Design this. 
+
+In the provided code, message boundaries are remembered  assigned to each message. When a message is sent using my_send, it is stored in the Send_Message table with a its length and socket descriptor , which is then sent over the underlying TCP connection along with the message data. On the receiving side, the TCP connection receives the message data in chunks and stores them in a buffer until the entire message is received. Once the entire message is received, it is stored in the Received_Message table with the corresponding socket descriptor.
+
+
+When the my_recv function is called, it checks the Received_Message table for any message with a matching sockfd. If such a message exists, the entry is deleted from the table. If the message is too large for the buffer provided by the caller, only the first buffer_size bytes of the message are copied to the buffer, and the rest of the message is discarded. If there is no matching message in the Received_Message table, the function blocks until a matching message is received.
+
+
+The use of fd's ensures that each message sent using my_send is received exactly once and in order, even if it is received in multiple chunks over the TCP connection. Additionally, the use of mutexes ensures that the Send_Message and Received_Message tables are accessed safely by multiple threads, preventing race conditions and other synchronization issues.
